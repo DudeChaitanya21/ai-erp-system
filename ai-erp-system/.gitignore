@@ -1,0 +1,72 @@
+# macOS
+.DS_Store
+
+# General
+*.log
+*.tmp
+*.swp
+
+# Env/secrets
+.env
+.env.* 
+!.env.example
+
+# Python / Django
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+.eggs/
+*.egg
+.build/
+dist/
+pip-wheel-metadata/
+.python-version
+.mypy_cache/
+.pytest_cache/
+.tox/
+.coverage
+htmlcov/
+.dmypy.json
+.pyre/
+.ruff_cache/
+.venv/
+venv/
+env/
+
+# Django project artifacts
+db.sqlite3
+db.sqlite3-journal
+media/
+staticfiles/
+static_root/
+collectstatic/
+
+# Node / React (frontend)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+package-lock.json
+# if you want to commit lockfile, remove the above line
+
+# Frontend builds and caches
+.build/
+build/
+dist/
+.cache/
+.parcel-cache/
+.turbo/
+.next/
+out/
+coverage/
+*.tsbuildinfo
+
+# Editors/IDEs
+.vscode/
+.idea/
+*.iml
+.history/
