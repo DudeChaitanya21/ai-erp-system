@@ -14,6 +14,10 @@ import WarehousesPage from "../pages/purchasing/WarehousesPage";
 import POView from "../pages/purchasing/POView";
 import MovementsPage from "../pages/purchasing/MovementsPage";
 import RoleRoute from "../components/auth/RoleRoute";
+import SalesOrderList from "../pages/sales/SalesOrderList";
+import SalesOrderForm from "../pages/sales/SalesOrderForm";
+import SalesOrderView from "../pages/sales/SalesOrderView";
+import DispatchForm from "../pages/sales/DispatchForm";
 
 const getRole = (): "admin" | "manager" | "staff" => {
   const cached = localStorage.getItem("me_role");
@@ -34,6 +38,17 @@ export const router = createBrowserRouter([
         children: [
           { index: true, element: <Dashboard /> },
           { path: "inventory", element: <InventoryPage /> },
+
+          {
+            path: "sales",
+            children: [
+              { index: true, element: <SalesOrderList /> },
+              { path: "new", element: <SalesOrderForm /> },
+              { path: "orders/:id", element: <SalesOrderView /> },
+              { path: "orders/:id/dispatch", element: <DispatchForm /> },
+            ],
+          },
+
           {
             path: "users",
             element: (
@@ -42,9 +57,10 @@ export const router = createBrowserRouter([
               </RoleRoute>
             ),
           },
-          { path: "sales", element: <div className="p-8"><h1 className="text-3xl font-bold">Sales</h1><p className="text-gray-600">Coming soon...</p></div> },
+
           { path: "customers", element: <div className="p-8"><h1 className="text-3xl font-bold">Customers</h1><p className="text-gray-600">Coming soon...</p></div> },
           { path: "reports", element: <div className="p-8"><h1 className="text-3xl font-bold">Reports</h1><p className="text-gray-600">Coming soon...</p></div> },
+
           { path: "purchasing/po", element: <POList /> },
           { path: "purchasing/po/new", element: <POForm /> },
           { path: "purchasing/grn", element: <GRNForm /> },

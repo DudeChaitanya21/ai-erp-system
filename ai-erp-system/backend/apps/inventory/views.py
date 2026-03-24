@@ -13,7 +13,7 @@ from .models import (
 )
 from .serializers import (
     ProductSerializer, CategorySerializer, SupplierSerializer, WarehouseSerializer, UnitSerializer,
-    PurchaseOrderSerializer, GoodsReceiptSerializer, StockMovementSerializer
+    PurchaseOrderSerializer, GoodsReceiptSerializer, StockMovementSerializer, TransferSerializer
 )
 
 class LowStockListView(ListCreateAPIView):
@@ -164,3 +164,39 @@ class StockMovementListView(ListCreateAPIView):
     filterset_fields = ["movement_type", "warehouse", "product"]
     search_fields = ["reference", "product__name", "warehouse__name"]
     ordering = ["-created_at"]
+
+
+class TransferListCreateView(ListCreateAPIView):
+    serializer_class = TransferSerializer
+    permission_classes = [IsAuthenticated, IsAdminOrManager]
+    filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
+    ordering = ["-created_at"]
+
+    def get_queryset(self):
+        from .models import Transfer
+        return Transfer.objects.all().order_by("-created_at")
+
+
+class PurchaseOrderReceivingSummaryView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk):
+        try:
+            po = PurchaseOrder.objects.get(pk=pk)
+        except PurchaseOrder.DoesNotExist:
+            return Response({"detail": "Purchase order not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        summary = []
+        for po_item in po.items.select_related("product").all():
+            received_total = GoodsReceiptItem.objects.filter(
+                grn__po=po, product=po_item.product
+            ).aggregate(total=models.Sum("received_qty")).get("total") or 0
+            pending = float(po_item.quantity - received_total)
+            summary.append({
+                "product_id": po_item.product_id,
+                "product_name": po_item.product.name,
+                "ordered": float(po_item.quantity),
+                "received": float(received_total),
+                "pending": max(pending, 0.0),
+            })
+        return Response({"po": po.id, "warehouse": po.warehouse_id, "lines": summary}, status=status.HTTP_200_OK)

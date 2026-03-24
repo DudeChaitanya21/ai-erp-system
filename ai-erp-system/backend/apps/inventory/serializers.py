@@ -4,7 +4,7 @@ from rest_framework import serializers
 from .models import (
     Product, Category, Supplier, Warehouse, Unit,
     PurchaseOrder, PurchaseOrderItem,
-    GoodsReceipt, GoodsReceiptItem, StockMovement
+    GoodsReceipt, GoodsReceiptItem, StockMovement, StockBalance, Transfer, TransferItem
 )
 
 
@@ -148,13 +148,19 @@ class GoodsReceiptSerializer(serializers.ModelSerializer):
 
             for item in items_data:
                 GoodsReceiptItem.objects.create(grn=grn, **item)
-                StockMovement.objects.create(
+                movement = StockMovement.objects.create(
                     product=item["product"],
                     warehouse=grn.warehouse,
                     movement_type="IN",
                     quantity=item["received_qty"],
                     reference=f"GRN#{grn.id}",
                 )
+                # Update balance
+                bal, _ = StockBalance.objects.select_for_update().get_or_create(
+                    product=item["product"], warehouse=grn.warehouse, defaults={"on_hand": 0}
+                )
+                bal.on_hand = (bal.on_hand or 0) + item["received_qty"]
+                bal.save()
 
             # Mark PO RECEIVED only when all PO item quantities are fully received.
             all_fully_received = True
@@ -173,6 +179,72 @@ class GoodsReceiptSerializer(serializers.ModelSerializer):
             po.save(update_fields=["status"])
 
             return grn
+
+
+class TransferItemSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TransferItem
+        fields = ["id", "product", "unit", "quantity"]
+
+
+class TransferSerializer(serializers.ModelSerializer):
+    items = TransferItemSerializer(many=True)
+
+    class Meta:
+        model = Transfer
+        fields = ["id", "source", "destination", "reference", "notes", "created_at", "items"]
+        read_only_fields = ["created_at"]
+
+    def validate(self, attrs):
+        if attrs["source"] == attrs["destination"]:
+            raise serializers.ValidationError({"destination": "Source and destination must be different."})
+        return attrs
+
+    def create(self, validated_data):
+        items_data = validated_data.pop("items", [])
+        source = validated_data["source"]
+        destination = validated_data["destination"]
+
+        with transaction.atomic():
+            transfer = Transfer.objects.create(**validated_data)
+            for item in items_data:
+                TransferItem.objects.create(transfer=transfer, **item)
+
+                # Stock check at source (no negative allowed)
+                src_bal, _ = StockBalance.objects.select_for_update().get_or_create(
+                    product=item["product"], warehouse=source, defaults={"on_hand": 0}
+                )
+                if (src_bal.on_hand or 0) < item["quantity"]:
+                    raise serializers.ValidationError(
+                        {"items": f"Insufficient stock for product {item['product'].id} at source warehouse."}
+                    )
+
+                # OUT from source
+                StockMovement.objects.create(
+                    product=item["product"],
+                    warehouse=source,
+                    movement_type="OUT",
+                    quantity=item["quantity"],
+                    reference=f"XFER#{transfer.id}",
+                )
+                src_bal.on_hand = (src_bal.on_hand or 0) - item["quantity"]
+                src_bal.save()
+
+                # IN to destination
+                StockMovement.objects.create(
+                    product=item["product"],
+                    warehouse=destination,
+                    movement_type="IN",
+                    quantity=item["quantity"],
+                    reference=f"XFER#{transfer.id}",
+                )
+                dst_bal, _ = StockBalance.objects.select_for_update().get_or_create(
+                    product=item["product"], warehouse=destination, defaults={"on_hand": 0}
+                )
+                dst_bal.on_hand = (dst_bal.on_hand or 0) + item["quantity"]
+                dst_bal.save()
+
+            return transfer
 
 
 class StockMovementSerializer(serializers.ModelSerializer):

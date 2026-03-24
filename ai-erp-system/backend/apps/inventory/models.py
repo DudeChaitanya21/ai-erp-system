@@ -169,3 +169,36 @@ class GoodsReceiptItem(models.Model):
     product = models.ForeignKey(Product, on_delete=models.PROTECT)
     unit = models.ForeignKey(Unit, on_delete=models.PROTECT, null=True, blank=True)
     received_qty = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(Decimal("0.00"))])
+
+class StockBalance(models.Model):
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name="balances")
+    warehouse = models.ForeignKey(Warehouse, on_delete=models.CASCADE, related_name="balances")
+    on_hand = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ("product", "warehouse")
+        indexes = [
+            models.Index(fields=["product", "warehouse"]),
+        ]
+
+    def __str__(self):
+        return f"{self.product_id}@{self.warehouse_id}={self.on_hand}"
+
+
+class Transfer(models.Model):
+    source = models.ForeignKey(Warehouse, on_delete=models.PROTECT, related_name="transfers_out")
+    destination = models.ForeignKey(Warehouse, on_delete=models.PROTECT, related_name="transfers_in")
+    reference = models.CharField(max_length=120, blank=True)
+    notes = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"XFER#{self.id} {self.source_id}->{self.destination_id}"
+
+
+class TransferItem(models.Model):
+    transfer = models.ForeignKey(Transfer, on_delete=models.CASCADE, related_name="items")
+    product = models.ForeignKey(Product, on_delete=models.PROTECT)
+    unit = models.ForeignKey(Unit, on_delete=models.PROTECT, null=True, blank=True)
+    quantity = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(Decimal("0.00"))])

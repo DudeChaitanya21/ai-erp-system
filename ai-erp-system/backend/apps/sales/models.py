@@ -1,60 +1,61 @@
 from django.db import models
 from django.core.validators import MinValueValidator
 from decimal import Decimal
+from apps.inventory.models import Product, Warehouse
 from apps.customers.models import Customer
-from apps.inventory.models import Product
 
-class Sale(models.Model):
-    STATUS_CHOICES = [
-        ('draft', 'Draft'),
-        ('pending', 'Pending'),
-        ('completed', 'Completed'),
-        ('cancelled', 'Cancelled'),
+class SalesOrder(models.Model):
+    STATUS = [
+        ("DRAFT", "Draft"),
+        ("CONFIRMED", "Confirmed"),
+        ("PARTIALLY_DISPATCHED", "Partially Dispatched"),
+        ("DISPATCHED", "Dispatched"),
+        ("CANCELLED", "Cancelled"),
     ]
-
-    invoice_number = models.CharField(max_length=50, unique=True, db_index=True)
-    customer = models.ForeignKey(Customer, on_delete=models.PROTECT, related_name='sales')
-    sale_date = models.DateTimeField(auto_now_add=True)
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='draft')
-    subtotal = models.DecimalField(max_digits=10, decimal_places=2, default=0)
-    tax_rate = models.DecimalField(max_digits=5, decimal_places=2, default=0)
-    tax_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
-    discount_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
-    total = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    customer = models.ForeignKey(
+        Customer,
+        on_delete=models.PROTECT,
+        related_name="sales_orders",
+        null=True,   
+        blank=True,
+    )
+    warehouse = models.ForeignKey(Warehouse, on_delete=models.PROTECT, related_name="sales_orders")
+    status = models.CharField(max_length=24, choices=STATUS, default="DRAFT")
+    order_date = models.DateField(auto_now_add=True)
+    expected_date = models.DateField(null=True, blank=True)
     notes = models.TextField(blank=True)
-    created_by = models.ForeignKey('auth.User', on_delete=models.SET_NULL, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        ordering = ['-sale_date']
-        indexes = [
-            models.Index(fields=['invoice_number']),
-            models.Index(fields=['customer', 'status']),
-            models.Index(fields=['sale_date']),
-        ]
+        ordering = ["-created_at"]
 
     def __str__(self):
-        return f"Sale {self.invoice_number}"
+        customer_label = self.customer.name if self.customer else "No Customer"
+        return f"SO#{self.id} - {customer_label}"
 
-    def calculate_total(self):
-        self.subtotal = sum(item.total for item in self.items.all())
-        self.tax_amount = (self.subtotal * self.tax_rate) / 100
-        self.total = self.subtotal + self.tax_amount - self.discount_amount
-        self.save()
 
-class SaleItem(models.Model):
-    sale = models.ForeignKey(Sale, on_delete=models.CASCADE, related_name='items')
+class SalesOrderItem(models.Model):
+    sales_order = models.ForeignKey(SalesOrder, on_delete=models.CASCADE, related_name="items")
     product = models.ForeignKey(Product, on_delete=models.PROTECT)
-    quantity = models.IntegerField(validators=[MinValueValidator(1)])
-    unit_price = models.DecimalField(max_digits=10, decimal_places=2)
-    discount = models.DecimalField(max_digits=5, decimal_places=2, default=0)
-    total = models.DecimalField(max_digits=10, decimal_places=2)
+    quantity = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(Decimal("0.00"))])
+    unit_price = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(Decimal("0.00"))])
+    discount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    tax_rate = models.DecimalField(max_digits=5, decimal_places=2, default=0)
 
-    class Meta:
-        unique_together = ['sale', 'product']
 
-    def save(self, *args, **kwargs):
-        self.total = (self.unit_price * self.quantity) * (1 - self.discount / 100)
-        super().save(*args, **kwargs)
-        self.sale.calculate_total()
+class Dispatch(models.Model):
+    sales_order = models.ForeignKey(SalesOrder, on_delete=models.PROTECT, related_name="dispatches")
+    warehouse = models.ForeignKey(Warehouse, on_delete=models.PROTECT, related_name="dispatches")
+    reference = models.CharField(max_length=120, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"DSP#{self.id} for SO#{self.sales_order_id}"
+
+
+class DispatchItem(models.Model):
+    dispatch = models.ForeignKey(Dispatch, on_delete=models.CASCADE, related_name="items")
+    product = models.ForeignKey(Product, on_delete=models.PROTECT)
+    dispatched_qty = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(Decimal("0.00"))])
+
